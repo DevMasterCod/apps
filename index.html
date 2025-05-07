@@ -1,126 +1,134 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Teachable Machine con Selector de Cámara</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modelo Teachable Machine</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f9;
-      margin: 0;
-      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f0f2f5;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
+      margin: 0;
+      padding: 20px;
     }
 
     h1 {
-      font-size: 24px;
       color: #333;
+      margin-bottom: 10px;
     }
 
-    select, button {
-      padding: 10px;
-      margin: 10px;
+    button {
+      padding: 12px 24px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
       font-size: 16px;
-      border-radius: 5px;
+      cursor: pointer;
+      margin: 20px 0;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #0056b3;
     }
 
     #webcam-container {
-      margin-top: 10px;
       border: 2px solid #ccc;
       border-radius: 10px;
-      background-color: #fff;
+      overflow: hidden;
+      background: white;
+      width: 220px;
+      height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     #label-container {
       margin-top: 20px;
       font-size: 16px;
-      text-align: center;
+      color: #333;
+      width: 100%;
+      max-width: 300px;
     }
 
     #label-container div {
-      margin: 5px;
-      padding: 8px;
+      margin: 5px 0;
+      padding: 10px;
       background-color: #fff;
       border: 1px solid #ddd;
       border-radius: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      text-align: center;
     }
   </style>
 </head>
 <body>
-  <h1>Modelo Teachable Machine</h1>
-
-  <label for="cameraSelect">Seleccionar cámara:</label>
-  <select id="cameraSelect">
-    <option value="environment">Trasera</option>
-    <option value="user">Frontal</option>
-  </select>
-
-  <button onclick="init()">Iniciar cámara</button>
-  <button id="capture-button" onclick="predict()" style="display:none;">Capturar imagen</button>
-
+  <h1>Teachable Machine - Clasificador</h1>
+  <button type="button" onclick="init()">Iniciar cámara</button>
   <div id="webcam-container"></div>
   <div id="label-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
   <script>
-    const URL = "https://teachablemachine.withgoogle.com/models/SHu2G5Hsj/";
+    const URL = "https://teachablemachine.withgoogle.com/models/bh6Fdxiz7/";
     let model, webcam, labelContainer, maxPredictions;
 
     async function init() {
       const modelURL = URL + "model.json";
       const metadataURL = URL + "metadata.json";
 
-      const selectedCamera = document.getElementById("cameraSelect").value;
-
       model = await tmImage.load(modelURL, metadataURL);
       maxPredictions = model.getTotalClasses();
 
-      webcam = new tmImage.Webcam(200, 200, false);
-      await webcam.setup({ facingMode: selectedCamera }); // <-- CAMBIO AQUÍ
+      webcam = new tmImage.Webcam(200, 200, true); // width, height, flip
+
+      try {
+        // Intentar usar la cámara trasera primero
+        await webcam.setup({ facingMode: { exact: "environment" } });
+      } catch (e) {
+        console.warn("Cámara trasera no disponible, usando la frontal.");
+        try {
+          await webcam.setup({ facingMode: "user" }); // fallback a la cámara frontal
+        } catch (err) {
+          alert("No se pudo acceder a la cámara. Revisa los permisos del navegador.");
+          console.error("Error accediendo a la cámara:", err);
+          return;
+        }
+      }
+
       await webcam.play();
-      webcam.update();
+      window.requestAnimationFrame(loop);
 
       document.getElementById("webcam-container").innerHTML = "";
       document.getElementById("webcam-container").appendChild(webcam.canvas);
 
       labelContainer = document.getElementById("label-container");
       labelContainer.innerHTML = "";
-
       for (let i = 0; i < maxPredictions; i++) {
         labelContainer.appendChild(document.createElement("div"));
       }
+    }
 
-      document.getElementById("capture-button").style.display = "inline-block";
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
     }
 
     async function predict() {
-      webcam.update();
       const prediction = await model.predict(webcam.canvas);
-
-      prediction.sort((a, b) => b.probability - a.probability);
-      const best = prediction[0];
-
-      let codigo = "", nombre = "";
-      switch (best.className.toLowerCase()) {
-        case "telefono":
-          codigo = "0001"; nombre = "Teléfono Samsung"; break;
-        case "reloj":
-          codigo = "0002"; nombre = "Reloj de mano"; break;
-        default:
-          codigo = "----"; nombre = best.className;
+      for (let i = 0; i < maxPredictions; i++) {
+        const classPrediction = `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
+        labelContainer.childNodes[i].innerHTML = classPrediction;
       }
-
-      labelContainer.innerHTML = `
-        <div><strong>Código:</strong> ${codigo}</div>
-        <div><strong>Nombre:</strong> ${nombre}</div>
-        <div><strong>Confianza:</strong> ${(best.probability * 100).toFixed(2)}%</div>
-      `;
     }
   </script>
 </body>
